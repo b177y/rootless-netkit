@@ -237,7 +237,6 @@ run_command() {
       return 0
    else
       [ -z "$BE_QUIET" ] && echo "Running ==> $SHOW_COMMAND"
-      echo "I AM BOUTTA RUN $3"
       eval $3
       return
    fi

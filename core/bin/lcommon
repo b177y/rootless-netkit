@@ -150,14 +150,11 @@ labClean() {
    for VM in $VHOSTLIST; do
       # Remove files from the lab directory. Note that dash does
       # not support brace expansion
-      removeLabFolder ${MCONSOLE_DIR}/${VM}
-      removeLabFile ${LAB_DIRECTORY}/${VM}.ready
-      removeLabFile ${LAB_DIRECTORY}/${VM}.disk
-      removeLabFile ${LAB_DIRECTORY}/${VM}.log
-      removeLabFile ${LAB_DIRECTORY}/${VM}.testdone
+      podman stop ${VM}
+      podman rm ${VM}
    done
    
-   removeLabFile ${LAB_DIRECTORY}/readyfor.test
+    podman network prune -f
 }
 
 
