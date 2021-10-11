@@ -654,7 +654,7 @@ KERNELCMD="$KERNELCMD ${VM_MODEL_FS}"
 ##### Actually start network hubs
 eval runHubs $HUBLIST
 
-run_command "$JUST_PRINT" "$KERNELCMD"
+run_command "$JUST_PRINT" "" "$KERNELCMD"
 
 # if [ "$TMUX_OPEN_TERMS" = "yes" ] && [ "$VM_CON0" = "tmux" ]; then
 #     vconnect -m "$VM_NAME" --terminal --interval 5 --retry-count 20 &> /dev/null &

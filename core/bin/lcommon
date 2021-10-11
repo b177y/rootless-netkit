@@ -314,18 +314,6 @@ startSingleVM() {
       exit 1
    fi
 
-   # Wait for virtual host startup script to create .ready file
-   if [ -z "$FASTMODE" ]; then
-      while [ ! -e "${LAB_DIRECTORY}/$VM.ready" ]; do
-         sleep 1
-      done
-      rm -f ${LAB_DIRECTORY}/$VM.ready > /dev/null 2>&1
-   fi
-   
-   # Wait for a specified amount of time before returning
-   if [ "$GRACE_TIME" -gt 0 ]; then
-      sleep $GRACE_TIME
-   fi
 }
 
 

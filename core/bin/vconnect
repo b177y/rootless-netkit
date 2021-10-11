@@ -8,7 +8,7 @@ RETRY_COUNT=1
 RETRY_INTERVAL=5
 
 tmux_connect(){ # $1 = machine name
-    tmux -L netkit attach -t="$1"
+    podman exec -it "$1" /bin/bash
 }
 
 open_terminal(){ # $1 = machine name
@@ -34,7 +34,8 @@ open_terminal(){ # $1 = machine name
             echo "[vconnect]: terminal $TERM_TYPE not supported, defaulting to xterm."
             TERMCMD="xterm -e";;
     esac
-    nohup $TERMCMD tmux -L netkit attach -t="$1" &> /dev/null &
+    echo "running nohup $TERMCMD podman exec -it "$1" /bin/bash &> /dev/null &"
+    nohup $TERMCMD podman exec -it "$1" /bin/bash &> /dev/null &
 }
 
 print_help(){
@@ -104,36 +105,11 @@ while (( "$#" )); do
   esac
 done
 
-if [ "$LIST_ONLY" = "TRUE" ]; then
-  tmux -L netkit list-sessions 2> /dev/null || \
-      echo -e "\nNo tmux sessions running for Netkit machines.\n"
-  exit 0
-fi
-
 if [ -z ${MACHINE_NAME+x} ]; then
     echo "Machine name not given."
     print_help
     exit 1
 fi
-
-ATTEMPTS=1
-
-while [ $ATTEMPTS -le $RETRY_COUNT ]; do
-    tmux -L netkit has-session -t="$MACHINE_NAME" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        ATMSG=""
-        [ $RETRY_COUNT -gt 1 ] && ATMSG="(Attempt $ATTEMPTS)"
-        echo "[vconnect]: tmux session does not exist for this machine. $ATMSG"
-        if [ $ATTEMPTS -eq $RETRY_COUNT ]; then
-            [ $RETRY_COUNT -gt 1 ] && echo "[vconnect]: too many attempts. exiting."
-            exit 1
-        fi
-        sleep "$RETRY_INTERVAL"
-    else
-        ATTEMPTS=$RETRY_COUNT
-    fi
-    ATTEMPTS=$((ATTEMPTS+1))
-done
 
 if [ "$OPEN_TERM" = "TRUE" ]; then
     open_terminal $MACHINE_NAME
