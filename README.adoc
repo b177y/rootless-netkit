@@ -23,7 +23,7 @@ Standard containers have been used to recreate netkit before,
 within the
 link:https://github.com/KatharaFramework/Kathara[Kathara]
 project.
-This uses docker which has some downsides which are not present when using rootless containers instead:
+This uses docker, which has some downsides (these would be mitigated by using podman rootless containers):
 
 * Docker runs a persistent daemon on your system
 * Kathara uses a setgid binary which allows the binary to be executed as the docker group, which gives the ability for root privilege escalation.
