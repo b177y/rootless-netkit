@@ -1,7 +1,0 @@
-fs/build/
-kernel/build/
-kernel/last-uml-kernel-config
-core/build/
-fs/cache/
-build/
-tests/test_results.txt
