@@ -1,0 +1,9 @@
+# bring up eth0 according to settings in /etc/network/interfaces
+ip link set eth0 up
+
+# ~~~~~ D H C P ~~~~~~~
+# look in /etc/dnsmasq.conf + dnsmasq.local.conf  for settings
+# Note that by setting the port to 0, then DNS is disabled.
+/etc/init.d/dnsmasq start
+
+

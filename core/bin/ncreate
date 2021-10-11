@@ -1,0 +1,21 @@
+#!/bin/bash
+
+function new_net(){
+    net="$1"
+    mkdir -p $HOME/.config/cni/net.d
+    # podman network create -d macvlan $net
+    cat <<EOF > $HOME/.config/cni/net.d/$net.conflist
+{
+   "cniVersion": "0.4.0",
+   "name": "$net",
+   "plugins": [
+      {
+         "type": "macvlan",
+         "master": ""
+      }
+   ]
+}
+EOF
+}
+
+new_net "$1"

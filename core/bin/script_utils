@@ -32,6 +32,7 @@ export LANG=C
 [ -f "$NETKIT_HOME/netkit.conf" ] && . "$NETKIT_HOME/netkit.conf"
 [ -f "$HOME/.netkit/netkit.conf" ] && . "$HOME/.netkit/netkit.conf"
 
+CAPS="--cap-add NET_ADMIN --cap-add SYS_ADMIN --cap-add CAP_NET_BIND_SERVICE --cap-add CAP_NET_RAW --cap-add CAP_SYS_NICE --cap-add CAP_IPC_LOCK --cap-add CAP_CHOWN"
 # Assign default values to undefined parameters
 : ${LOGFILENAME:=""}
 : ${MCONSOLE_DIR:="$HOME/.netkit/mconsole"}
@@ -42,8 +43,8 @@ export LANG=C
 : ${VPACKAGE_MOUNT_POINT:="/mnt/netkit-fs-mount-point/"}
 : ${VM_MEMORY:=32}
 : ${VM_MEMORY_SKEW:=4}
-: ${VM_MODEL_FS:="$NETKIT_HOME/fs/netkit-fs"}
-: ${VM_KERNEL:="$NETKIT_HOME/kernel/netkit-kernel"}
+: ${VM_MODEL_FS:="localhost/netkit-deb-test /sbin/init"}
+: ${VM_KERNEL:="podman run -d $CAPS"}
 : ${VM_CON0:=xterm}
 : ${VM_CON1:=none}
 : ${CON0_PORTHELPER:="no"}
@@ -259,59 +260,19 @@ someOneUses() {
 startInetHub() {
    local HUB_COMMAND COMPLETE_COMMAND TAP_DEVICE TUNTAP_COMMAND PRESERVE_ENV
    TAP_DEVICE="nk_tap_$USER"
-   HUB_COMMAND="$NETKIT_HOME/bin/uml_switch -tap $TAP_DEVICE -hub -unix $1 </dev/null 2>&1"
-   COMPLETE_COMMAND="${HUB_COMMAND} | awk -v SWITCHNAME=$1 -v USER=$USERID -v CURRENTDATE=\"$(date +"%Y/%m/%d %H:%M:%S")\" \
-               '{printf \"%s %15s %25s %s\n\", CURRENTDATE, USER, SWITCHNAME, \$0}' > ${HUB_LOG} &"
-   if [ ! -S "$1" ] || ! someOneUses "$1"; then
-      # Either socket does not exist yet or it is still unused
-      if [ "$USE_SUDO" = "yes" ]; then
-         TUNTAP_COMMAND="sudo -p \"$USER's password:\" $NETKIT_HOME/bin/manage_tuntap $NETKIT_HOME start $USER $2 $3 $1"
-      else
-         TUNTAP_COMMAND="su -mc \"$NETKIT_HOME/bin/manage_tuntap $NETKIT_HOME start $USER $2 $3 $1\""
-      fi
-      if [ -z "$BE_QUIET" ]; then
-         echo "******** Starting Internet connected virtual hub ********"
-         echo "   $TAP_ADDRESS (host side) - $GUEST_ADDRESS (guest side)"
-         echo "********     (root privileges are required)      ********"
-         run_command "$JUST_PRINT" \
-                     "$NETKIT_HOME/bin/manage_tuntap $NETKIT_HOME start $USER $2 $3 $1" \
-                     "$TUNTAP_COMMAND" || \
-            { echo 1>&2 "Error while configuring the tunnel."; exit 1; }
-         echo "************** Abandoning root privileges ***************"
-         echo
-      else
-         run_command "$JUST_PRINT" \
-                     "$NETKIT_HOME/bin/manage_tuntap $NETKIT_HOME start $USER $2 $3 $1" \
-                     "$TUNTAP_COMMAND" >/dev/null || \
-            { echo 1>&2 "Error while configuring the tunnel."; exit 1; }
-      fi
-      run_command "$JUST_PRINT" "$HUB_COMMAND" "$COMPLETE_COMMAND"
-   fi
-   
-   # Wait for uml_switch to start
-   while [ -z "$JUST_PRINT" -a ! -S "$1" ]; do
-      sleep 1
-   done
+   HUB_COMMAND="podman network create --driver bridge nk_tap"
+
+   run_command "$JUST_PRINT" "$HUB_COMMAND"
 }
 
 
 # This function starts a hub, if it does not exist yet
 startHub() {
-   local HUB_COMMAND COMPLETE_COMMAND
-   HUB_COMMAND="$NETKIT_HOME/bin/uml_switch -hub -unix $1 </dev/null 2>&1"
-   COMPLETE_COMMAND="${HUB_COMMAND} | awk -v SWITCHNAME=$1 -v USER=$USERID -v CURRENTDATE=\"$(date +"%Y/%m/%d %H:%M:%S")\" \
-                '{printf \"%s %15s %25s %s\n\", CURRENTDATE, USER, SWITCHNAME, \$0}' > ${HUB_LOG} &"
-   if [ ! -S "$1" ]; then
-      run_command "$JUST_PRINT" "$HUB_COMMAND" "$COMPLETE_COMMAND"
-   elif ! someOneUses "$1"; then
-      # Socket already exists but is not used
-      run_command "$JUST_PRINT" "$HUB_COMMAND" "$COMPLETE_COMMAND"
-   fi
-   
-   # Wait for uml_switch to start
-   while [ -z "$JUST_PRINT" -a ! -S "$1" ]; do
-      sleep 1
-   done
+    local HUB_COMMAND COMPLETE_COMMAND
+    HUB_NAME=$(echo $1 | sed -e 's/\/home\/'"$USER"'\/.netkit\/hubs\/vhub_'"$USER"'_\(.*\).cnct/\1/')
+    HUB_COMMAND="$NETKIT_HOME/bin/ncreate $HUB_NAME"
+
+    run_command "$JUST_PRINT" "$HUB_COMMAND" "$COMPLETE_COMMAND"
 }
 
 

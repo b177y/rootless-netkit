@@ -1,4 +1,0 @@
-# Completely disable SELINUX
-SELINUX=disabled
-SELINUXTYPE=targeted
-SETLOCALDEFS=0

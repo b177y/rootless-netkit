@@ -1,0 +1,10 @@
+# start the switch (a0) first so we can capture everything from time zero
+dh: a0
+h4: a0
+h5: a0
+
+# ensure dhcp clients start after dhcp server
+h1: dh
+h2: dh
+h3: dh
+

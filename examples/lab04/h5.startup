@@ -1,0 +1,7 @@
+# configure this host's ip MAC address and ip address
+# also prevent it using arp
+ifconfig eth0 hw ether 02:60:ac:9a:bc:05
+ifconfig eth0 192.168.97.5/26 -arp
+
+# put a static entry into this host's arp cache for h4
+arp -s 192.168.97.4 02:60:ac:9a:bc:04

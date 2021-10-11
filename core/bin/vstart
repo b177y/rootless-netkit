@@ -466,11 +466,11 @@ if [ "$VM_CON0" = "xterm" -o "$VM_CON1" = "xterm" ] || [ "$VM_CON0" = "tmux" -a 
    [ $TERMINAL_APPLICATION = "wt" ] && TERMINAL_APPLICATION="wt.exe"
    # Checks that we're on wsl by looking for the wsl executable which is
    # exposed as a local command on wsl 2 systems.
-   if ! which $TERMINAL_APPLICATION > /dev/null 2>&1; then
-      warning "$SCRIPTNAME" "$CMDLINE" "$0" \
-               "Terminal emulator \"$TERMINAL_APPLICATION\" appears not to be available. Please install it or use --xterm."
-      exit 1
-   fi
+   # if ! which $TERMINAL_APPLICATION > /dev/null 2>&1; then
+   #    warning "$SCRIPTNAME" "$CMDLINE" "$0" \
+   #             "Terminal emulator \"$TERMINAL_APPLICATION\" appears not to be available. Please install it or use --xterm."
+   #    exit 1
+   # fi
 fi
 
 
@@ -479,6 +479,7 @@ setupInterfaces() {
    local DEVICE HUB_NAME HUB_SOCKET FIRSTLINE IF_CMDLINE CHECK_TAP TAP_ADDRESS
    local GUEST_ADDRESS ENABLED_DEFAULT_ROUTE USED_DEVICES
    FIRSTLINE=1
+    KERNELCMD="$KERNELCMD --network"
    while [ $# -gt 0 ]; do
       # Using a double percent (%%) allows to tolerate situations in which
       # virtual hub names include an equal sign (=)
@@ -486,6 +487,7 @@ setupInterfaces() {
       # Using a single hash (#) allows to tolerate situations in which
       # virtual hub names include an equal sign (=)
       HUB_NAME=${1#*=}
+
       if [ "${HUB_NAME}" = "tap" ]; then
          echo 1>&2
          warning "$SCRIPTNAME" "$CMDLINE" "$0" "Invalid tap collision domain specification: \"$1\"."
@@ -514,12 +516,22 @@ setupInterfaces() {
          else
             eval "$CHECK_TAP"
          fi
+          if [ $FIRSTLINE != 1 ]; then
+              KERNELCMD="$KERNELCMD,nk_tap"
+          else
+              KERNELCMD="$KERNELCMD nk_tap"
+          fi
+
       else
+          if [ $FIRSTLINE != 1 ]; then
+              KERNELCMD="$KERNELCMD,$HUB_NAME"
+          else
+              KERNELCMD="$KERNELCMD $HUB_NAME"
+          fi
          # This is a normal (i.e., not "tap") collision domain
          TAP_ADDRESS=""
          GUEST_ADDRESS=""
       fi
-      
       HUB_SOCKET="${HUB_SOCKET_DIR}/${HUB_SOCKET_PREFIX}_${USERID}_${HUB_NAME}${HUB_SOCKET_EXTENSION}"
       
       if [ $FIRSTLINE != 1 ]; then
@@ -531,19 +543,11 @@ setupInterfaces() {
          warning "$SCRIPTNAME" "$CMDLINE" "$0" "Duplicate interface: $DEVICE."
          exit 1
       fi
-      
-      KERNELCMD="$KERNELCMD $DEVICE=daemon,,,$HUB_SOCKET"
-      # Remember that this network interface is in use
+
       USED_DEVICES="${USED_DEVICES} ${DEVICE} "
       
       if [ ! -z "$TAP_ADDRESS" ]; then
          HUBLIST="$HUBLIST $HUB_SOCKET,$TAP_ADDRESS,$GUEST_ADDRESS"
-         KERNELCMD="$KERNELCMD autoconf_$DEVICE=$GUEST_ADDRESS"
-         if [ -z "$ENABLED_DEFAULT_ROUTE" ]; then
-            # Ensure the default route is specified only once.
-            KERNELCMD="$KERNELCMD def_route=$TAP_ADDRESS"
-            ENABLED_DEFAULT_ROUTE=1
-         fi
       else
          HUBLIST="$HUBLIST $HUB_SOCKET"
       fi
@@ -557,79 +561,19 @@ setupInterfaces() {
 
 ################## Building kernel command line ##################
 
-: ${VM_FS:="${PWD}/${VM_NAME}.disk"}
 KERNELCMD="$VM_KERNEL"
-
-check_filesystem() {
-   FS_TYPE=$(stat -f $2 | grep -w Type)
-   FS_TYPE=${FS_TYPE#*Type: }
-   if echo $FS_TYPE | grep -vqE "ext[234]|ntfs|ntfs-3g|fuse|reiser|jfs|xfs"; then
-      warning "$SCRIPTNAME" "$CMDLINE" "$1" "Filesystem $FS_TYPE does not seems to support sparse file $2. This may result in dramatic performance loss and disk space consumption."
-   fi
-}
-
-# Check if model fs or cow fs are on a filesystem supporting sparse file
-if [ -z "$USE_MODEL_FS" ]; then
-   check_filesystem $0 $VM_MODEL_FS
-else
-   check_filesystem $0 $VM_FS
-fi
 
 if [ -z "$BE_QUIET" ]; then
    echo
    echo
    echo "============= Starting virtual machine \"$VM_NAME\" ============="
-   echo "   Kernel:     $VM_KERNEL"
-fi
-
-
-##### Setup kernel modules directory
-eval KERNEL_MODULES_DIRECTORY=$(dirname $VM_KERNEL)/modules
-if [ -d $KERNEL_MODULES_DIRECTORY ]; then
-   [ -z "$BE_QUIET" ] && echo "   Modules:    $KERNEL_MODULES_DIRECTORY"
-   KERNELCMD="$KERNELCMD modules=$KERNEL_MODULES_DIRECTORY"
+   echo "   Kernel:     $(uname -r)"
 fi
 
 
 ##### Set virtual machine name
-KERNELCMD="$KERNELCMD name=$VM_NAME title=$VM_NAME umid=$VM_NAME"
+KERNELCMD="$KERNELCMD --name $VM_NAME --hostname $VM_NAME"
 
-
-##### Set memory amount
-[ -z "$BE_QUIET" ] && echo "   Memory:     ${VM_MEMORY} MB"
-VM_MEMORY=$(($VM_MEMORY + $VM_MEMORY_SKEW))
-KERNELCMD="$KERNELCMD mem=${VM_MEMORY}M"
-
-
-##### Filesystem settings
-[ -z "$BE_QUIET" ] && echo "   Model fs:   $VM_MODEL_FS"
-if [ ! -z "$USE_MODEL_FS" ]; then
-   # Use model fs as virtual machine filesystem (do not use COW)
-   KERNELCMD="$KERNELCMD ubd0=$VM_MODEL_FS"
-   VM_FS="$VM_MODEL_FS"
-   [ -z "$BE_QUIET" ] && echo "   Filesystem: using model fs (no COW)"
-else
-   [ -z "$BE_QUIET" ] && echo -n "   Filesystem: $VM_FS"
-   # Explicitly declaring the model fs name is redundant after the COW
-   # file has been created. Nevertheless, this is needed in order to later
-   # get information about the virtual machine (i.e., by using vlist)
-   KERNELCMD="$KERNELCMD ubd0=${VM_FS},${VM_MODEL_FS}"
-   if [ ! -f "$VM_FS" ]; then
-      [ -z "$BE_QUIET" ] && echo " (new)"
-   else
-      [ -z "$BE_QUIET" ] && echo
-   fi
-fi
-
-# Append a boot option that specifies the root filesystem
-KERNELCMD="$KERNELCMD root=98:0"
-# The following root= options should also be valid
-# KERNELCMD="$KERNELCMD root=/dev/ubd/disc0/part1"
-# KERNELCMD="$KERNELCMD root=/dev/ubda1"
-
-
-##### Setup mconsole directory
-KERNELCMD="$KERNELCMD uml_dir=$MCONSOLE_DIR"
 
 
 ##### Setup network interfaces
@@ -638,13 +582,6 @@ if [ ! -z "$ETH_INTERFACES" ]; then
    eval setupInterfaces $ETH_INTERFACES
 fi
 
-##### Set HOSTHOME
-if [ -z "$NO_HOSTHOME" ]; then
-   KERNELCMD="$KERNELCMD hosthome=${HOME}"
-   [ -z "$BE_QUIET" ] && echo "   Hostfs at:  $HOME"
-fi
-
-
 ##### Check whether virtual machine already exists
 if [ -z "$JUST_PRINT" ] && getVMinfoByName "$USERID" "$VM_NAME"; then
    echo 1>&2 "${SCRIPTNAME}: Virtual machine \"$VM_NAME\" is already running. Please"
@@ -652,134 +589,73 @@ if [ -z "$JUST_PRINT" ] && getVMinfoByName "$USERID" "$VM_NAME"; then
    exit 1
 fi
 
-
-##### Check whether filesystem is already in use
-if [ -z "$JUST_PRINT" -a -e "$VM_FS" ]; then
-   if someOneUses "$VM_FS"; then
-      echo 1>&2 "${SCRIPTNAME}: Filesystem $VM_FS is already in use. Please use a"
-      echo 1>&2 "different filesystem or virtual machine name."
-      exit 1
-   fi
-fi
-
-
-##### Append exec, hostlab and hostwd parameters, if any
-if [ ! -z "$VM_EXEC" ]; then
-   [ -z "$BE_QUIET" ] && echo "   Boot cmd:   \"$VM_EXEC\""
-   KERNELCMD="$KERNELCMD exec=\"$VM_EXEC\""
+##### Set HOSTHOME
+if [ -z "$NO_HOSTHOME" ]; then
+   KERNELCMD="$KERNELCMD --volume ${HOME}:/hosthome"
+   [ -z "$BE_QUIET" ] && echo "   Host home at:  $HOME"
 fi
 if [ ! -z "$VM_HOSTLAB" ]; then
    [ -z "$BE_QUIET" ] && echo "   Hostlab at: $VM_HOSTLAB"
-   KERNELCMD="$KERNELCMD hostlab=$VM_HOSTLAB"
-fi
-if [ ! -z "$VM_HOSTWD" ]; then
-   [ -z "$BE_QUIET" ] && echo "   Host WD at: $VM_HOSTWD"
-   KERNELCMD="$KERNELCMD hostwd=$VM_HOSTWD"
+   KERNELCMD="$KERNELCMD --volume $VM_HOSTLAB:/hostlab"
 fi
 
 
-##### Set verbosity parameter
-if [ ! -z "$DEBUG" ]; then
-   KERNELCMD="gdb --args $KERNELCMD"
-elif [ ! -z "$VERBOSE" ]; then
-   KERNELCMD="$KERNELCMD"
-else
-   KERNELCMD="$KERNELCMD quiet"
-fi
+##### Filesystem settings
+[ -z "$BE_QUIET" ] && echo "   Model fs:   $VM_MODEL_FS (OCI Image)"
+KERNELCMD="$KERNELCMD ${VM_MODEL_FS}"
 
-##### Bypass port helper, if required (only allowed for the primary terminal)
-if [ $VM_CON0 = "xterm" -a "$CON0_PORTHELPER" != "yes" ]; then
-   	VM_CON0="this_noporthelper"
-fi
 
 ##### Attach terminals
-case $VM_CON0 in
-   none)    KERNELCMD="$KERNELCMD con0=null";;
-   xterm)   KERNELCMD="$KERNELCMD con0=xterm";;
-   this|this_noporthelper)    KERNELCMD="$KERNELCMD con0=fd:0,fd:1";;
-   pty)     KERNELCMD="$KERNELCMD con0=pty";;
-   port:*)  KERNELCMD="$KERNELCMD con0=${VM_CON0}";;
-esac
-case $VM_CON1 in
-   none)    KERNELCMD="$KERNELCMD con1=null";;
-   xterm)   KERNELCMD="$KERNELCMD con1=xterm";;
-   this)    KERNELCMD="$KERNELCMD con1=fd:0,fd:1";;
-   pty)     KERNELCMD="$KERNELCMD con1=pty";;
-   port:*)  KERNELCMD="$KERNELCMD con1=${VM_CON1}";;
-esac
+# case $VM_CON0 in
+#    none)    KERNELCMD="$KERNELCMD con0=null";;
+#    xterm)   KERNELCMD="$KERNELCMD con0=xterm";;
+#    this|this_noporthelper)    KERNELCMD="$KERNELCMD con0=fd:0,fd:1";;
+#    pty)     KERNELCMD="$KERNELCMD con0=pty";;
+#    port:*)  KERNELCMD="$KERNELCMD con0=${VM_CON0}";;
+# esac
+# case $VM_CON1 in
+#    none)    KERNELCMD="$KERNELCMD con1=null";;
+#    xterm)   KERNELCMD="$KERNELCMD con1=xterm";;
+#    this)    KERNELCMD="$KERNELCMD con1=fd:0,fd:1";;
+#    pty)     KERNELCMD="$KERNELCMD con1=pty";;
+#    port:*)  KERNELCMD="$KERNELCMD con1=${VM_CON1}";;
+# esac
 
-
-
-##### Disable SELinux
-KERNELCMD="$KERNELCMD SELINUX_INIT=0"
 
 
 ##### Setup a proper terminal emulator, if asked to
-if [ ! -z "$TERM_TYPE" ]; then
-   case "$TERM_TYPE" in
-      konsole)
-         KERNELCMD="$KERNELCMD xterm=konsole,-T,-e";;
-      konsole-tab)
-         KERNELCMD="$KERNELCMD xterm=$NETKIT_HOME/bin/konsole-tabs.sh,-T,-e";;
-      gnome)
-         KERNELCMD="$KERNELCMD xterm=gnome-terminal,-t,-x";;
-      xterm) ;;
-   esac
-fi
+# if [ ! -z "$TERM_TYPE" ]; then
+#    case "$TERM_TYPE" in
+#       konsole)
+#          KERNELCMD="$KERNELCMD xterm=konsole,-T,-e";;
+#       konsole-tab)
+#          KERNELCMD="$KERNELCMD xterm=$NETKIT_HOME/bin/konsole-tabs.sh,-T,-e";;
+#       gnome)
+#          KERNELCMD="$KERNELCMD xterm=gnome-terminal,-t,-x";;
+#       xterm) ;;
+#    esac
+# fi
 
-##### Append any other user provided parameters
-if [ ! -z "$KERNEL_APPEND" ]; then
-   KERNELCMD="$KERNELCMD $KERNEL_APPEND"
-   [ -z "$BE_QUIET" ] && echo "   Other args:$KERNEL_APPEND"
-fi
+# # Add our blocking script to the execution order
+# if [ "$VM_CON0" = "xterm" -o "$VM_CON0" = "this_noporthelper" ]; then
+#     KERNELCMD="$NETKIT_HOME/bin/block-wrapper $TERM_TYPE $VM_NAME $KERNELCMD"
+# fi
 
-[ -z "$BE_QUIET" ] && echo
-
-# Add our blocking script to the execution order
-if [ "$VM_CON0" = "xterm" -o "$VM_CON0" = "this_noporthelper" ]; then
-    KERNELCMD="$NETKIT_HOME/bin/block-wrapper $TERM_TYPE $VM_NAME $KERNELCMD"
-fi
-
-# Set up tmux
-if [ "$VM_CON0" = "tmux" ]; then
-   if ! which tmux > /dev/null 2>&1; then
-      warning "$SCRIPTNAME" "$CMDLINE" "$0" \
-               "tmux appears not to be installed. Exiting."
-      exit 1
-   fi
-    KERNELCMD="$NETKIT_HOME/bin/block-wrapper tmux $VM_NAME $KERNELCMD"
-fi
+# # Set up tmux
+# if [ "$VM_CON0" = "tmux" ]; then
+#    if ! which tmux > /dev/null 2>&1; then
+#       warning "$SCRIPTNAME" "$CMDLINE" "$0" \
+#                "tmux appears not to be installed. Exiting."
+#       exit 1
+#    fi
+#     KERNELCMD="$NETKIT_HOME/bin/block-wrapper tmux $VM_NAME $KERNELCMD"
+# fi
 
 ##### Actually start network hubs
 eval runHubs $HUBLIST
 
-##### Prepare the cleanHubs function for execution after a virtual machine stops
-export cleanHubs
+run_command "$JUST_PRINT" "$KERNELCMD"
 
-#### Actually start virtual machine
-if [ -z "$RUN_IN_FOREGROUND" -a "$VM_CON0" != "this" -a "$VM_CON1" != "this" ]; then
-   BACKGROUND="&"
-fi
-
-### Invocation of uml_mconsole is needed in order to "wake up" port-helper if
-### it ever hangs when booting the virtual machine.
-WAKEUP_PORTHELPER=""
-if [ "$CON0_PORTHELPER" = "yes" ]; then
-   WAKEUP_PORTHELPER="{ sleep 5; $NETKIT_HOME/bin/uml_mconsole $VM_NAME help > /dev/null 2>&1; } &"
-fi
-
-### Remove .disk file, if requested
-if [ ! -z "$REMOVE_FS" ]; then
-   REMOVE_FS_COMMAND="{ while [ ! -f $VM_FS ]; do sleep 1; done; rm -f $VM_FS; } &"
-fi
-
-### Completely hide primary console, if requested to
-if [ "$VM_CON0" = "none" ]; then
-   REDIRECT_CONSOLE=">/dev/null 2>&1"
-fi
-
-run_command "$JUST_PRINT" "$KERNELCMD" "{ $WAKEUP_PORTHELPER $REMOVE_FS_COMMAND $KERNELCMD; cleanHubs $HUBLIST; } $REDIRECT_CONSOLE $BACKGROUND"
-
-if [ "$TMUX_OPEN_TERMS" = "yes" ] && [ "$VM_CON0" = "tmux" ]; then
-    vconnect -m "$VM_NAME" --terminal --interval 5 --retry-count 20 &> /dev/null &
-fi
+# if [ "$TMUX_OPEN_TERMS" = "yes" ] && [ "$VM_CON0" = "tmux" ]; then
+#     vconnect -m "$VM_NAME" --terminal --interval 5 --retry-count 20 &> /dev/null &
+# fi

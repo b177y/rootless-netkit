@@ -1,0 +1,2 @@
+# bring up eth0 according to settings in /etc/network/interfaces file
+ifup eth0

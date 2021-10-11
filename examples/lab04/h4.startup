@@ -1,0 +1,9 @@
+# give the arp cache a short timeout
+echo 20 > /proc/sys/net/ipv4/neigh/eth0/gc_stale_time
+
+# configure this host's ip address
+ifconfig eth0 hw ether 02:60:ac:9a:bc:04
+ifconfig eth0 192.168.97.4/26
+
+# put a static entry fo h5 into our arp cache
+arp -s 192.168.97.5 02:60:ac:9a:bc:05

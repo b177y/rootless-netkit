@@ -1,0 +1,69 @@
+= Netkit Using Rootless Containers
+
+== Overview
+
+This is a fork of 
+link:https://github.com/netkit-jh/netkit-jh-build[netkit-jh]
+which aims to be
+a proof of concept to show that rootless containers can be used
+as an alternative to User Mode Linux within the network
+emulation tool `netkit`.
+
+Rootless containers have the following advantages over UML:
+
+* Faster boot times
+* More reliable
+* Allows for easy 'tapout' without need for root
+* Smaller resource footprint as the 'VMs' share
+the host kernel and do not need their own Userspace kernels.
+* Allows for easily using different linux distros / making and sharing small changes as the 'VM' filesystem is a container image.
+* Allows you to easily connect to a 'VM' with a shell rather than being stuck with a tty.
+
+Standard containers have been used to recreate netkit before,
+within the
+link:https://github.com/KatharaFramework/Kathara[Kathara]
+project.
+This uses docker which has some downsides which are not present when using rootless containers instead:
+
+* Docker runs a persistent daemon on your system
+* Kathara uses a setgid binary which allows the binary to be executed as the docker group, which gives the ability for root privilege escalation.
+This is because docker runs rootfull containers by default.
+* Docker creates lots of iptables firewall rules before you've even started creating containers / docker networks which can be annoying and confusing on a system which is used by beginners who are learning networking (the target users of netkit)
+
+CAUTION: This is a work in progress (the below setup will not yet give you a working version of rootless netkit).
+This POC is not intended to be a reliable replacement to `netkit-jh`.
+If the POC is successful,
+I plan to fully rewrite `netkit` in `go` using rootless containers as the underlying technology.
+
+== Setup
+
+Dependencies:
+
+* podman
+* slirp4netns
+* fuse-overlayfs
+
+[source,sh]
+----
+sudo sysctl kernel.unprivileged_userns_clone=1
+
+sudo touch /etc/subuid /etc/subgid
+sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER
+----
+
+Clone this repo then add the following to your shell rc (e.g. ~/.bashrc)
+
+[source,sh]
+----
+export NETKIT_HOME="/PATH/TO/rootless-netkit/core"
+export PATH="$PATH:$NETKIT_HOME/bin"
+----
+
+== Example Usage
+
+[source,sh]
+----
+cd rootless-netkit/examples/lab04
+
+lstart
+----

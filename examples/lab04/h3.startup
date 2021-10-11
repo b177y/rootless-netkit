@@ -1,0 +1,2 @@
+ifconfig eth0 hw ether 02:60:ac:9a:bc:03
+dhclient eth0
